@@ -1,0 +1,10 @@
+{$DOMAIN} {
+	reverse_proxy app:3000
+	encode gzip
+
+	header {
+		# Belt-and-suspenders alongside the app's own security headers
+		# (next.config.ts) — harmless if duplicated.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+	}
+}

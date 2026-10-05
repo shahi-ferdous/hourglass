@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      APP_ORIGIN: ${APP_ORIGIN}
+      TOKEN_PEPPER: ${TOKEN_PEPPER}
+      DELETE_GRACE_DAYS: ${DELETE_GRACE_DAYS:-30}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - web
+    ports:
+      # Bound to localhost only — reachable from a reverse proxy running on
+      # this same machine (CloudPanel, nginx, the bundled Caddy below, ...),
+      # never directly from the internet. Change APP_PORT in .env if 3100
+      # is already taken on your VPS.
+      - "127.0.0.1:${APP_PORT:-3100}:3000"
+
+  # Opt-in (`docker compose --profile caddy up -d`) — skip this entirely
+  # when fronting with your own reverse proxy (e.g. CloudPanel), which is
+  # the default assumption here. Caddy gets you automatic Let's Encrypt TLS
+  # for free if you'd rather not use a control panel at all.
+  caddy:
+    profiles: ["caddy"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - web
+
+networks:
+  # No internet/host access for postgres or the app — only reachable from
+  # caddy, and only over the `web` bridge network app is also attached to.
+  internal:
+    internal: true
+  web:
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
