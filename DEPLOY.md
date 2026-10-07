@@ -18,6 +18,42 @@ certificate. Docker just runs the app and its database behind that, on a
 port only reachable from the VPS itself (`127.0.0.1`), not the public
 internet. Nothing about your existing CloudPanel sites changes.
 
+## Variant: PostgreSQL already installed on the VPS (what production uses)
+
+If Postgres runs on the VPS itself (not in Docker), use
+`docker-compose.prod.yml` instead of `docker-compose.yml`. It has no
+`postgres` service; the containers reach the host database through
+`host.docker.internal`. Never edit tracked files on the server — the
+differences live in that file.
+
+In the VPS `.env`, set the full connection string yourself:
+
+```bash
+DATABASE_URL=postgres://USER:PASSWORD@host.docker.internal:5432/DBNAME
+APP_ORIGIN=https://your.domain
+TOKEN_PEPPER=<openssl rand -base64 32>
+```
+
+Host Postgres must accept connections from the Docker bridge: set
+`listen_addresses` to include the bridge IP (usually `172.17.0.1`) in
+`postgresql.conf`, and allow `172.16.0.0/12` for that user/database in
+`pg_hba.conf`.
+
+Deploy and update (all commands use `-f docker-compose.prod.yml`):
+
+```bash
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs -f app
+```
+
+Workflow rule: edit on your machine → push to GitHub → `git pull` on the
+VPS. If `git status` on the VPS is ever not clean, something was edited
+there by hand.
+
+The rest of this guide describes the all-in-Docker setup (bundled
+Postgres container), where the `docker compose` commands omit `-f`.
+
 ## Docker, in four ideas
 
 You don't need more than this to follow along:

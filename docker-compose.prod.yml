@@ -1,0 +1,43 @@
+# Production stack for a VPS that already runs its own PostgreSQL on the host
+# (no postgres container). Fronted by a reverse proxy on the same machine
+# (CloudPanel / nginx) — see DEPLOY.md.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# DATABASE_URL in .env must point at the host, e.g.
+#   postgres://USER:PASSWORD@host.docker.internal:5432/DBNAME
+# and host Postgres must listen on the Docker bridge address and allow it in
+# pg_hba.conf.
+services:
+  migrate:
+    build:
+      context: .
+      target: migrator
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    networks:
+      - default
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      APP_ORIGIN: ${APP_ORIGIN}
+      TOKEN_PEPPER: ${TOKEN_PEPPER}
+      DELETE_GRACE_DAYS: ${DELETE_GRACE_DAYS:-30}
+      NODE_ENV: production
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - default
+    ports:
+      # Localhost only — the reverse proxy on this machine forwards to it.
+      - "127.0.0.1:${APP_PORT:-3100}:3000"
