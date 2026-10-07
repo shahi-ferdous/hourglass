@@ -61,7 +61,7 @@ export function ShareScreen({ shareUrl, manageUrl }: ShareScreenProps) {
         <Button asChild variant="outline">
           <Link href="/create">Schedule another meeting</Link>
         </Button>
-        <SupportButton variant="default" jump />
+        <SupportButton variant="default" tone="blue" jump />
       </div>
     </div>
   );

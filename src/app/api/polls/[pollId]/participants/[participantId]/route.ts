@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { participants } from "@/db/schema";
-import { requireParticipant, resolveParticipant } from "@/lib/auth/authorize";
+import { requireHost, resolveParticipant } from "@/lib/auth/authorize";
 import { replaceParticipantSlots } from "@/lib/db/availability";
 import { getPollOrThrow, pollToWindow } from "@/lib/db/polls";
 import { withErrorHandling } from "@/lib/errors/handle";
-import { conflictError, forbiddenError, notFoundError } from "@/lib/errors/api-error";
+import {
+  conflictError,
+  forbiddenError,
+  notFoundError,
+  unauthorizedError,
+} from "@/lib/errors/api-error";
 import { assertSameOrigin } from "@/lib/security/csrf";
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/security/rate-limit";
 import { updateParticipantSchema } from "@/lib/validation/participant";
@@ -20,10 +25,17 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: Rout
   enforceRateLimit(req, "mutation", RATE_LIMITS.mutationBackstop);
   const { pollId, participantId } = await params;
   const poll = await getPollOrThrow(pollId);
-  const requester = await requireParticipant(req, pollId);
+  const requester = await resolveParticipant(req, pollId);
 
-  if (requester.id !== participantId) {
-    throw forbiddenError("You can only edit your own response.");
+  if (requester?.id !== participantId) {
+    // A host who got in via the host password (no bearer-token cookie) may
+    // still edit their own host response.
+    const host = await requireHost(req, pollId).catch(() => null);
+    if (!host || host.id !== participantId) {
+      throw requester || host
+        ? forbiddenError("You can only edit your own response.")
+        : unauthorizedError();
+    }
   }
   if (poll.status === "closed") {
     throw conflictError(

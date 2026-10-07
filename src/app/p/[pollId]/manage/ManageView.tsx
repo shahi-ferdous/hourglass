@@ -12,7 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AvailabilityGrid } from "@/components/AvailabilityGrid";
 import { TimezoneSwitcher } from "@/components/TimezoneSwitcher";
 import { PollSettingsForm } from "./PollSettingsForm";
-import { RosterList } from "./RosterList";
+import { RosterList } from "@/components/RosterList";
+import { ResponseEditor } from "@/components/ResponseEditor";
 import { DeletePollDialog } from "./DeletePollDialog";
 import { api, ApiClientError, getErrorMessage } from "@/lib/api-client";
 import { buildSlotGrid } from "@/lib/time/grid";
@@ -152,6 +153,18 @@ function ManageContent({
 
   const host = useMemo(() => participants.find((p) => p.isHost), [participants]);
   const hostSlots = useMemo(() => new Set(host?.slots ?? []), [host]);
+
+  // The host's own response is edited with the same grid respondents use;
+  // everyone else feeds the "show others' availability" overlay.
+  const others = useMemo(
+    () => ({
+      counts: new Map(
+        [...counts.entries()].map(([iso, n]) => [iso, n - (hostSlots.has(iso) ? 1 : 0)] as const),
+      ),
+      total: participants.filter((p) => !p.isHost).length,
+    }),
+    [counts, hostSlots, participants],
+  );
 
   const rankedSlots = useMemo(
     () =>
@@ -298,6 +311,21 @@ function ManageContent({
         />
       </div>
 
+      {host && (
+        <ResponseEditor
+          pollId={pollId}
+          participantId={host.id}
+          savedName={host.displayName}
+          savedSlots={host.slots}
+          slots={slots}
+          displayTimezone={displayTimezone}
+          closed={poll.status === "closed"}
+          others={others}
+          heading="Your availability"
+          onSaved={() => onReload()}
+        />
+      )}
+
       <FinalizeSection
         pollId={pollId}
         ranked={rankedSlots}
@@ -310,7 +338,14 @@ function ManageContent({
         runAction={runAction}
       />
 
-      <RosterList pollId={pollId} participants={participants} onChanged={onReload} />
+      <RosterList
+        pollId={pollId}
+        participants={participants}
+        slots={slots}
+        displayTimezone={displayTimezone}
+        canRemove
+        onChanged={onReload}
+      />
     </div>
   );
 }

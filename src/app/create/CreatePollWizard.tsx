@@ -188,13 +188,19 @@ export function CreatePollWizard() {
 }
 
 function StepIndicator({ current }: { current: number }) {
+  // On narrow screens only the active step shows its label — four labels
+  // plus connectors don't fit in a phone's width and wrap awkwardly.
   return (
-    <ol className="flex items-center gap-2 text-sm">
+    <ol className="flex items-center gap-1.5 text-sm sm:gap-2" aria-label="Progress">
       {STEPS.map((label, i) => (
-        <li key={label} className="flex items-center gap-2">
+        <li
+          key={label}
+          aria-current={i === current ? "step" : undefined}
+          className="flex shrink-0 items-center gap-1.5 sm:gap-2"
+        >
           <span
             className={
-              "flex size-6 items-center justify-center rounded-full text-xs font-medium " +
+              "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium " +
               (i === current
                 ? "bg-primary text-primary-foreground"
                 : i < current
@@ -204,10 +210,17 @@ function StepIndicator({ current }: { current: number }) {
           >
             {i + 1}
           </span>
-          <span className={i === current ? "font-medium" : "text-muted-foreground"}>
+          <span
+            className={
+              "whitespace-nowrap " +
+              (i === current ? "font-medium" : "hidden text-muted-foreground sm:inline")
+            }
+          >
             {label}
           </span>
-          {i < STEPS.length - 1 && <span className="mx-1 text-muted-foreground">—</span>}
+          {i < STEPS.length - 1 && (
+            <span aria-hidden className="ml-0.5 h-px w-3 bg-border sm:mx-1 sm:w-6" />
+          )}
         </li>
       ))}
     </ol>

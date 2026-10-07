@@ -1,26 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DateTime } from "luxon";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ViewPasswordGate } from "@/components/ViewPasswordGate";
 import { TimezoneSwitcher } from "@/components/TimezoneSwitcher";
-import { AvailabilityGrid, type OverlayLayer } from "@/components/AvailabilityGrid";
+import { ResponseEditor } from "@/components/ResponseEditor";
 import { BestTimesList } from "@/components/BestTimesList";
+import { RosterList, type RosterParticipant } from "@/components/RosterList";
 import { SupportButton } from "@/components/SupportButton";
 import { ManageAccessPrompt } from "@/components/ManageAccessPrompt";
 import { api, ApiClientError, getErrorMessage } from "@/lib/api-client";
 import { buildSlotGrid } from "@/lib/time/grid";
 import { detectLocalTimezone } from "@/lib/time/timezones";
 import type { OverlapResponse, PublicPollResponse } from "@/lib/types";
-import { CalendarIcon, LinkIcon, MapPinIcon, ShieldCheckIcon } from "lucide-react";
+import { CalendarIcon, CopyIcon, LinkIcon, MapPinIcon, ShieldCheckIcon } from "lucide-react";
 
 type Stage =
   | { kind: "loading" }
@@ -160,10 +158,6 @@ function PollContent({
   onTimezoneChange: (tz: string) => void;
   onReload: () => void;
 }) {
-  const [displayName, setDisplayName] = useState("");
-  const [nameConfirmed, setNameConfirmed] = useState(!!poll.viewerParticipantId);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
   const [savedResponseUrl, setSavedResponseUrl] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
 
@@ -175,61 +169,42 @@ function PollContent({
     hostTimezone: poll.hostTimezone ?? "UTC",
   });
 
-  const hostSlots = new Set(
-    overlap?.slots
-      .filter((s) => overlap.hostParticipantId && s.participantIds.includes(overlap.hostParticipantId))
-      .map((s) => s.startAt) ?? [],
-  );
+  const viewerId = poll.viewerParticipantId ?? null;
 
-  // Pre-fill this viewer's own existing selection once overlap data + a
-  // known participant id are both available.
-  useEffect(() => {
-    if (!poll.viewerParticipantId || !overlap) return;
-    const mine = overlap.slots
-      .filter((s) => s.participantIds.includes(poll.viewerParticipantId!))
-      .map((s) => s.startAt);
-    // Syncing local selection state from freshly-fetched server data.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelected(new Set(mine));
-  }, [poll.viewerParticipantId, overlap]);
+  const respondents: RosterParticipant[] = useMemo(() => {
+    if (!overlap) return [];
+    const byPerson = new Map<string, string[]>();
+    for (const s of overlap.slots) {
+      for (const id of s.participantIds) {
+        const list = byPerson.get(id);
+        if (list) list.push(s.startAt);
+        else byPerson.set(id, [s.startAt]);
+      }
+    }
+    return overlap.participants.map((p) => ({ ...p, slots: byPerson.get(p.id) ?? [] }));
+  }, [overlap]);
+
+  const viewer = respondents.find((r) => r.id === viewerId) ?? null;
+  const savedSlots = useMemo(() => viewer?.slots ?? [], [viewer]);
+
+  // Everyone except the viewer — their own marks are drawn on top.
+  const others = useMemo(() => {
+    const counts = new Map<string, number>();
+    const hostSlots = new Set<string>();
+    let total = 0;
+    for (const r of respondents) {
+      if (r.id === viewerId) continue;
+      total += 1;
+      for (const iso of r.slots) {
+        counts.set(iso, (counts.get(iso) ?? 0) + 1);
+        if (r.isHost) hostSlots.add(iso);
+      }
+    }
+    return { counts, total, hostSlots, hostName: poll.hostName };
+  }, [respondents, viewerId, poll.hostName]);
 
   const isClosed = poll.status === "closed";
   const isHost = poll.viewerIsHost === true;
-
-  const overlayLayers: OverlayLayer[] = [
-    {
-      key: "host",
-      label: poll.hostName ? `${poll.hostName} is available` : "Host is available",
-      slots: hostSlots,
-      className: "bg-sky-100 border-sky-300 dark:bg-sky-950 dark:border-sky-800",
-    },
-  ];
-
-  async function handleSave() {
-    if (!displayName.trim() && !poll.viewerParticipantId) return;
-    setSaving(true);
-    try {
-      if (poll.viewerParticipantId) {
-        await api.patch(`/api/polls/${pollId}/participants/${poll.viewerParticipantId}`, {
-          slots: [...selected],
-        });
-        toast.success("Your response has been updated");
-      } else {
-        const res = await api.post<{ participantId: string; responseUrl: string }>(
-          `/api/polls/${pollId}/participants`,
-          { displayName: displayName.trim(), slots: [...selected] },
-        );
-        setSavedResponseUrl(res.responseUrl);
-        toast.success("Your response has been saved");
-      }
-      setJustSaved(true);
-      onReload();
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Couldn't save your response."));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-10">
@@ -268,63 +243,31 @@ function PollContent({
         onChange={onTimezoneChange}
       />
 
-      {!nameConfirmed ? (
-        <Card>
-          <CardContent className="flex flex-col gap-3 pt-6">
-            <Label htmlFor="participantName">Your name</Label>
-            <Input
-              id="participantName"
-              placeholder="Your name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              autoFocus
-              maxLength={100}
-            />
-            <Button
-              type="button"
-              className="w-fit"
-              disabled={!displayName.trim()}
-              onClick={() => setNameConfirmed(true)}
-            >
-              Continue
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">Your availability</p>
-            <AvailabilityGrid
-              mode="edit"
-              ariaLabel="Your availability"
-              slots={slots}
-              displayTimezone={displayTimezone}
-              selected={selected}
-              onChange={setSelected}
-              disabled={isClosed}
-              overlayLayers={overlayLayers}
-            />
-          </div>
+      <ResponseEditor
+        pollId={pollId}
+        participantId={viewerId}
+        savedName={viewer?.displayName ?? ""}
+        savedSlots={savedSlots}
+        slots={slots}
+        displayTimezone={displayTimezone}
+        closed={isClosed}
+        others={others}
+        onSaved={({ responseUrl }) => {
+          if (responseUrl) setSavedResponseUrl(responseUrl);
+          setJustSaved(true);
+          onReload();
+        }}
+      />
 
-          {!isClosed && (
-            <Button onClick={handleSave} disabled={saving} className="w-fit">
-              {saving ? "Saving…" : poll.viewerParticipantId ? "Update my response" : "Save my response"}
-            </Button>
-          )}
+      {savedResponseUrl && <SavedLinkReminder responseUrl={savedResponseUrl} />}
 
-          {savedResponseUrl && (
-            <SavedLinkReminder responseUrl={savedResponseUrl} />
-          )}
-
-          {justSaved && (
-            <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-4 py-3">
-              <p className="flex-1 text-sm text-muted-foreground">
-                Thanks for responding! Hourglass is free to use.
-              </p>
-              <SupportButton variant="default" jump />
-            </div>
-          )}
-        </>
+      {justSaved && (
+        <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-4 py-3">
+          <p className="flex-1 text-sm text-muted-foreground">
+            Thanks for responding! Hourglass is free to use.
+          </p>
+          <SupportButton variant="default" tone="blue" jump />
+        </div>
       )}
 
       {overlap && overlap.totalParticipants > 0 && (
@@ -340,6 +283,15 @@ function PollContent({
             displayTimezone={displayTimezone}
           />
         </div>
+      )}
+
+      {respondents.length > 0 && (
+        <RosterList
+          pollId={pollId}
+          participants={respondents}
+          slots={slots}
+          displayTimezone={displayTimezone}
+        />
       )}
     </div>
   );
@@ -427,13 +379,30 @@ function FinalTimeBanner({
 }
 
 function SavedLinkReminder({ responseUrl }: { responseUrl: string }) {
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(responseUrl);
+      toast.success("Link copied");
+    } catch {
+      toast.error("Couldn't copy — select the link and copy it manually.");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-muted/30 px-4 py-3 text-sm">
       <p>
         Using a different device later? Save this link to view or edit your response without
         re-entering your name:
       </p>
-      <code className="truncate rounded bg-background px-2 py-1">{responseUrl}</code>
+      <div className="flex min-w-0 items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1.5">
+          {responseUrl}
+        </code>
+        <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={copy}>
+          <CopyIcon className="size-3.5" />
+          Copy
+        </Button>
+      </div>
     </div>
   );
 }
