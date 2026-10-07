@@ -24,6 +24,8 @@ interface ResponseEditorProps {
   /** Other people's availability, for the optional overlay. */
   others: HeatOverlay;
   heading?: string;
+  /** Whether the viewer is the poll host (tags their chip in the inspector). */
+  isHost?: boolean;
   onSaved: (result: { responseUrl?: string }) => void;
 }
 
@@ -42,6 +44,7 @@ export function ResponseEditor({
   closed = false,
   others,
   heading = "Mark your available times",
+  isHost = false,
   onSaved,
 }: ResponseEditorProps) {
   const nameId = useId();
@@ -120,6 +123,7 @@ export function ResponseEditor({
         disabled={!editing}
         heat={showOthers && canOverlay ? others : undefined}
         headerAction={toggle}
+        self={participantId ? { id: participantId, name: savedName, isHost } : undefined}
       />
 
       {editing ? (

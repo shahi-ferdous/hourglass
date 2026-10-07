@@ -4,14 +4,20 @@ import { useState } from "react";
 import { DateTime } from "luxon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SlotPeople } from "@/components/SlotPeople";
+import type { SlotPerson } from "@/lib/slot-people";
 import type { OverlapResponse } from "@/lib/types";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon } from "lucide-react";
 
 interface BestTimesListProps {
   slots: OverlapResponse["slots"];
   totalParticipants: number;
   slotMinutes: number;
   displayTimezone: string;
+  /** Who is free at each slot — shown when a row is expanded. */
+  peopleBySlot: Map<string, SlotPerson[]>;
+  /** Marks the viewer's own chip as "You". */
+  viewerId?: string | null;
   /** How many slots to show before "Show more". */
   initialCount?: number;
 }
@@ -21,9 +27,12 @@ export function BestTimesList({
   totalParticipants,
   slotMinutes,
   displayTimezone,
+  peopleBySlot,
+  viewerId,
   initialCount = 3,
 }: BestTimesListProps) {
   const [expanded, setExpanded] = useState(false);
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
 
   // A slot only one person can make isn't an "overlap" — skip it.
   const ranked = [...slots]
@@ -49,17 +58,35 @@ export function BestTimesList({
           const start = DateTime.fromISO(slot.startAt, { zone: "utc" }).setZone(displayTimezone);
           const end = start.plus({ minutes: slotMinutes });
           const isUnanimous = slot.count === totalParticipants;
+          const isOpen = openSlot === slot.startAt;
           return (
-            <li
-              key={slot.startAt}
-              className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
-            >
-              <span>
-                {start.toFormat("ccc, LLL d")} · {start.toFormat("h:mm a")}–{end.toFormat("h:mm a")}
-              </span>
-              <Badge variant={isUnanimous ? "default" : "secondary"} className="shrink-0">
-                {slot.count}/{totalParticipants} available
-              </Badge>
+            <li key={slot.startAt} className="rounded-md border text-sm">
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                onClick={() => setOpenSlot(isOpen ? null : slot.startAt)}
+                className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {isOpen ? (
+                    <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span>
+                    {start.toFormat("ccc, LLL d")} · {start.toFormat("h:mm a")}–
+                    {end.toFormat("h:mm a")}
+                  </span>
+                </span>
+                <Badge variant={isUnanimous ? "default" : "secondary"} className="shrink-0">
+                  {slot.count}/{totalParticipants} available
+                </Badge>
+              </button>
+              {isOpen && (
+                <div className="border-t px-3 py-2.5">
+                  <SlotPeople people={peopleBySlot.get(slot.startAt) ?? []} viewerId={viewerId} />
+                </div>
+              )}
             </li>
           );
         })}

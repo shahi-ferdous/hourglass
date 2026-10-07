@@ -2,6 +2,9 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { SlotPeople } from "@/components/SlotPeople";
+import type { SlotPerson } from "@/lib/slot-people";
 import type { GridSlot } from "@/lib/time/grid";
 import {
   buildDisplayMatrix,
@@ -17,6 +20,8 @@ export interface HeatOverlay {
   total: number;
   hostSlots?: Set<string>;
   hostName?: string | null;
+  /** Who the other people are at each slot, for the click/tap inspector. */
+  peopleBySlot?: Map<string, SlotPerson[]>;
 }
 
 interface BaseProps {
@@ -36,6 +41,8 @@ interface EditProps extends BaseProps {
   heat?: HeatOverlay;
   /** Rendered at the right end of the legend row, e.g. the "show others" toggle. */
   headerAction?: React.ReactNode;
+  /** The viewer, so their own saved slots list them as "You" in the inspector. */
+  self?: SlotPerson;
 }
 
 interface HeatmapProps extends BaseProps {
@@ -44,6 +51,8 @@ interface HeatmapProps extends BaseProps {
   totalParticipants: number;
   hostSlots?: Set<string>;
   hostName?: string | null;
+  /** Everyone's availability by slot — click/tap a cell to see who is free. */
+  peopleBySlot?: Map<string, SlotPerson[]>;
 }
 
 /** Read-only view of a single person's availability. */
@@ -76,6 +85,48 @@ export function AvailabilityGrid(props: AvailabilityGridProps) {
   if (props.mode === "edit") return <EditableGrid {...props} matrix={matrix} />;
   if (props.mode === "view") return <PersonGridView {...props} matrix={matrix} />;
   return <HeatmapGridView {...props} matrix={matrix} />;
+}
+
+/**
+ * Wraps one cell in a popover that lists who is free at that slot. Every
+ * cell gets the same wrapper (closed unless inspected) so the cell's DOM
+ * node — and keyboard focus — is never remounted when a popover opens.
+ */
+function SlotInspector({
+  open,
+  title,
+  people,
+  viewerId,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  people: SlotPerson[];
+  viewerId?: string | null;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Popover open={open} onOpenChange={(next) => !next && onClose()}>
+      <PopoverAnchor asChild>{children}</PopoverAnchor>
+      <PopoverContent
+        side="top"
+        className="w-auto max-w-[min(18rem,calc(100vw-2rem))] min-w-40"
+        // Keep keyboard focus on the cell that was activated.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        // Tapping another cell (or this one again) is handled by the cell's
+        // own click handler — don't let the popover's outside-dismiss race it.
+        onInteractOutside={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest?.("[data-inspect-cell]")) e.preventDefault();
+        }}
+      >
+        <p className="text-xs font-medium text-muted-foreground">{title}</p>
+        <SlotPeople people={people} viewerId={viewerId} />
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function GridShell({
@@ -169,9 +220,13 @@ function EditableGrid({
   disabled,
   heat,
   headerAction,
+  self,
   ariaLabel,
   className,
 }: EditProps & { matrix: DisplayMatrix }) {
+  // Locked (not editing) with the overlay on: cells inspect instead of toggle.
+  const canInspect = !!disabled && !!heat;
+  const [inspectIso, setInspectIso] = useState<string | null>(null);
   const dragModeRef = useRef<"select" | "deselect" | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const cellRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -210,6 +265,10 @@ function EditableGrid({
 
   const handleClick = useCallback(
     (iso: string) => (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (canInspect) {
+        setInspectIso((cur) => (cur === iso ? null : iso));
+        return;
+      }
       if (disabled) return;
       // Mouse clicks are already handled by the pointerdown/drag flow;
       // this branch only fires for touch/keyboard-triggered clicks.
@@ -217,7 +276,7 @@ function EditableGrid({
         applyToggle(iso, !selected.has(iso));
       }
     },
-    [applyToggle, disabled, selected],
+    [applyToggle, canInspect, disabled, selected],
   );
 
   const moveFocus = useCallback(
@@ -269,11 +328,12 @@ function EditableGrid({
         case " ":
         case "Enter":
           e.preventDefault();
-          if (!disabled) applyToggle(iso, !selected.has(iso));
+          if (canInspect) setInspectIso((cur) => (cur === iso ? null : iso));
+          else if (!disabled) applyToggle(iso, !selected.has(iso));
           break;
       }
     },
-    [applyToggle, disabled, moveFocus, selected],
+    [applyToggle, canInspect, disabled, moveFocus, selected],
   );
 
   // The "Your availability" key and the action (toggle) share one fixed
@@ -317,7 +377,19 @@ function EditableGrid({
         // heat color stays visible and the mark is a small filled badge.
         const solidMark = isSelected && !heat;
 
+        const inspectPeople = [
+          ...(self && isSelected ? [self] : []),
+          ...(heat?.peopleBySlot?.get(cell.isoUtc) ?? []),
+        ];
+
         return (
+          <SlotInspector
+            open={canInspect && inspectIso === cell.isoUtc}
+            title={`${cell.dateTime.toFormat("ccc, LLL d")} · ${formatTimeOfDay(timeKey)}`}
+            people={inspectPeople}
+            viewerId={self?.id}
+            onClose={() => setInspectIso(null)}
+          >
           <button
             type="button"
             ref={(el) => {
@@ -328,7 +400,9 @@ function EditableGrid({
             aria-selected={isSelected}
             aria-label={`${cell.dateTime.toFormat("cccc, LLLL d")} at ${formatTimeOfDay(timeKey)}${isSelected ? ", selected" : ""}${heat && othersCount > 0 ? `, ${othersCount} of ${heat.total} others free` : ""}`}
             tabIndex={focusKey === key || (focusKey === null && dateIdx === 0 && timeIdx === 0) ? 0 : -1}
-            disabled={disabled}
+            disabled={disabled && !canInspect}
+            data-inspect-cell={canInspect ? "" : undefined}
+            aria-expanded={canInspect ? inspectIso === cell.isoUtc : undefined}
             onFocus={() => setFocusKey(key)}
             onPointerDown={handlePointerDown(cell.isoUtc)}
             onPointerEnter={handlePointerEnter(cell.isoUtc)}
@@ -344,9 +418,10 @@ function EditableGrid({
                 : cn(
                     !tier?.color && "bg-muted/40",
                     tier?.solid ? "text-white" : "text-foreground/80",
-                    !disabled && (tier?.color ? "hover:brightness-95" : "hover:bg-muted"),
+                    (!disabled || canInspect) &&
+                      (tier?.color ? "hover:brightness-95" : "hover:bg-muted"),
                   ),
-              disabled && "cursor-default",
+              canInspect ? "cursor-pointer" : disabled && "cursor-default",
             )}
           >
             {solidMark ? (
@@ -360,6 +435,7 @@ function EditableGrid({
             ) : null}
             {heat && isHostFree && <HostDot />}
           </button>
+          </SlotInspector>
         );
       }}
     />
@@ -429,9 +505,11 @@ function HeatmapGridView({
   totalParticipants,
   hostSlots,
   hostName,
+  peopleBySlot,
   ariaLabel,
   className,
 }: HeatmapProps & { matrix: DisplayMatrix }) {
+  const [inspectIso, setInspectIso] = useState<string | null>(null);
   const legend = (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
       <HeatLegend hostName={hostName} />
@@ -457,20 +535,32 @@ function HeatmapGridView({
         const { color, solid } = heatmapTier(count, totalParticipants);
 
         return (
-          <div
-            role="gridcell"
-            title={`${cell.dateTime.toFormat("cccc, LLLL d")} at ${formatTimeOfDay(timeKey)} — ${count} of ${totalParticipants} available`}
-            aria-label={`${cell.dateTime.toFormat("cccc, LLLL d")} at ${formatTimeOfDay(timeKey)}, ${count} of ${totalParticipants} available${isHostFree ? ", host is free" : ""}`}
-            className={cn(
-              "relative flex h-8 w-full min-w-[56px] items-center justify-center rounded-md text-[10px] font-semibold",
-              solid ? "text-white" : "text-foreground/80",
-              count === 0 && "bg-muted/40",
-            )}
-            style={{ backgroundColor: color }}
+          <SlotInspector
+            open={inspectIso === cell.isoUtc}
+            title={`${cell.dateTime.toFormat("ccc, LLL d")} · ${formatTimeOfDay(timeKey)}`}
+            people={peopleBySlot?.get(cell.isoUtc) ?? []}
+            onClose={() => setInspectIso(null)}
           >
-            {count > 0 ? count : ""}
-            {isHostFree && <HostDot />}
-          </div>
+            <button
+              type="button"
+              role="gridcell"
+              data-inspect-cell=""
+              aria-expanded={inspectIso === cell.isoUtc}
+              onClick={() => setInspectIso((cur) => (cur === cell.isoUtc ? null : cell.isoUtc))}
+              title={`${cell.dateTime.toFormat("cccc, LLLL d")} at ${formatTimeOfDay(timeKey)} — ${count} of ${totalParticipants} available`}
+              aria-label={`${cell.dateTime.toFormat("cccc, LLLL d")} at ${formatTimeOfDay(timeKey)}, ${count} of ${totalParticipants} available${isHostFree ? ", host is free" : ""}. Show who is available`}
+              className={cn(
+                "relative flex h-8 w-full min-w-[56px] cursor-pointer items-center justify-center rounded-md text-[10px] font-semibold transition-colors hover:brightness-95",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                solid ? "text-white" : "text-foreground/80",
+                count === 0 && "bg-muted/40 hover:bg-muted",
+              )}
+              style={{ backgroundColor: color }}
+            >
+              {count > 0 ? count : ""}
+              {isHostFree && <HostDot />}
+            </button>
+          </SlotInspector>
         );
       }}
     />

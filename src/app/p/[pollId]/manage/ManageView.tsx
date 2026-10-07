@@ -17,9 +17,11 @@ import { ResponseEditor } from "@/components/ResponseEditor";
 import { DeletePollDialog } from "./DeletePollDialog";
 import { api, ApiClientError, getErrorMessage } from "@/lib/api-client";
 import { buildSlotGrid } from "@/lib/time/grid";
+import { buildPeopleBySlot, type SlotPerson } from "@/lib/slot-people";
+import { SlotPeople } from "@/components/SlotPeople";
 import { detectLocalTimezone } from "@/lib/time/timezones";
 import type { ManageResponse } from "@/lib/types";
-import { CopyIcon, LinkIcon, MapPinIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, CopyIcon, LinkIcon, MapPinIcon } from "lucide-react";
 
 type Stage =
   | { kind: "loading" }
@@ -156,14 +158,17 @@ function ManageContent({
 
   // The host's own response is edited with the same grid respondents use;
   // everyone else feeds the "show others' availability" overlay.
+  const peopleBySlot = useMemo(() => buildPeopleBySlot(participants), [participants]);
+
   const others = useMemo(
     () => ({
       counts: new Map(
         [...counts.entries()].map(([iso, n]) => [iso, n - (hostSlots.has(iso) ? 1 : 0)] as const),
       ),
       total: participants.filter((p) => !p.isHost).length,
+      peopleBySlot: buildPeopleBySlot(participants, host?.id),
     }),
-    [counts, hostSlots, participants],
+    [counts, hostSlots, participants, host],
   );
 
   const rankedSlots = useMemo(
@@ -308,6 +313,7 @@ function ManageContent({
           totalParticipants={participants.length}
           hostSlots={hostSlots}
           hostName={host?.displayName}
+          peopleBySlot={peopleBySlot}
         />
       </div>
 
@@ -322,6 +328,7 @@ function ManageContent({
           closed={poll.status === "closed"}
           others={others}
           heading="Your availability"
+          isHost
           onSaved={() => onReload()}
         />
       )}
@@ -329,6 +336,8 @@ function ManageContent({
       <FinalizeSection
         pollId={pollId}
         ranked={rankedSlots}
+        peopleBySlot={peopleBySlot}
+        viewerId={host?.id}
         totalParticipants={participants.length}
         slotMinutes={poll.slotMinutes}
         displayTimezone={displayTimezone}
@@ -353,6 +362,8 @@ function ManageContent({
 function FinalizeSection({
   pollId,
   ranked,
+  peopleBySlot,
+  viewerId,
   totalParticipants,
   slotMinutes,
   displayTimezone,
@@ -363,6 +374,8 @@ function FinalizeSection({
 }: {
   pollId: string;
   ranked: { startAt: string; count: number }[];
+  peopleBySlot: Map<string, SlotPerson[]>;
+  viewerId?: string | null;
   totalParticipants: number;
   slotMinutes: number;
   displayTimezone: string;
@@ -371,6 +384,8 @@ function FinalizeSection({
   busy: boolean;
   runAction: (action: () => Promise<void>, successMessage?: string) => Promise<void>;
 }) {
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
+
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm font-medium">Best overlapping times</p>
@@ -405,35 +420,52 @@ function FinalizeSection({
             const start = DateTime.fromISO(slot.startAt, { zone: "utc" }).setZone(displayTimezone);
             const end = start.plus({ minutes: slotMinutes });
             const isSelected = finalStartAt === slot.startAt;
+            const isOpen = openSlot === slot.startAt;
             return (
-              <li
-                key={slot.startAt}
-                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-              >
-                <span>
-                  {start.toFormat("ccc, LLL d")} · {start.toFormat("h:mm a")}–
-                  {end.toFormat("h:mm a")}{" "}
-                  <span className="text-muted-foreground">
-                    ({slot.count}/{totalParticipants})
-                  </span>
-                </span>
-                <Button
-                  size="sm"
-                  variant={isSelected ? "secondary" : "outline"}
-                  disabled={busy}
-                  onClick={() =>
-                    runAction(
-                      () =>
-                        api.post(`/api/polls/${pollId}/finalize`, {
-                          startAt: slot.startAt,
-                          endAt: end.toUTC().toISO(),
-                        }),
-                      "Meeting time set",
-                    )
-                  }
-                >
-                  {isSelected ? "Selected" : "Select"}
-                </Button>
+              <li key={slot.startAt} className="rounded-md border text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => setOpenSlot(isOpen ? null : slot.startAt)}
+                    className="-mx-1 flex min-w-0 items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {isOpen ? (
+                      <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <span>
+                      {start.toFormat("ccc, LLL d")} · {start.toFormat("h:mm a")}–
+                      {end.toFormat("h:mm a")}{" "}
+                      <span className="text-muted-foreground">
+                        ({slot.count}/{totalParticipants})
+                      </span>
+                    </span>
+                  </button>
+                  <Button
+                    size="sm"
+                    variant={isSelected ? "secondary" : "outline"}
+                    disabled={busy}
+                    onClick={() =>
+                      runAction(
+                        () =>
+                          api.post(`/api/polls/${pollId}/finalize`, {
+                            startAt: slot.startAt,
+                            endAt: end.toUTC().toISO(),
+                          }),
+                        "Meeting time set",
+                      )
+                    }
+                  >
+                    {isSelected ? "Selected" : "Select"}
+                  </Button>
+                </div>
+                {isOpen && (
+                  <div className="border-t px-3 py-2.5">
+                    <SlotPeople people={peopleBySlot.get(slot.startAt) ?? []} viewerId={viewerId} />
+                  </div>
+                )}
               </li>
             );
           })}

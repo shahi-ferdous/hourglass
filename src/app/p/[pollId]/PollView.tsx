@@ -16,6 +16,7 @@ import { SupportButton } from "@/components/SupportButton";
 import { ManageAccessPrompt } from "@/components/ManageAccessPrompt";
 import { api, ApiClientError, getErrorMessage } from "@/lib/api-client";
 import { buildSlotGrid } from "@/lib/time/grid";
+import { buildPeopleBySlot } from "@/lib/slot-people";
 import { detectLocalTimezone } from "@/lib/time/timezones";
 import type { OverlapResponse, PublicPollResponse } from "@/lib/types";
 import { CalendarIcon, CopyIcon, LinkIcon, MapPinIcon, ShieldCheckIcon } from "lucide-react";
@@ -187,6 +188,8 @@ function PollContent({
   const viewer = respondents.find((r) => r.id === viewerId) ?? null;
   const savedSlots = useMemo(() => viewer?.slots ?? [], [viewer]);
 
+  const peopleBySlot = useMemo(() => buildPeopleBySlot(respondents), [respondents]);
+
   // Everyone except the viewer — their own marks are drawn on top.
   const others = useMemo(() => {
     const counts = new Map<string, number>();
@@ -200,7 +203,13 @@ function PollContent({
         if (r.isHost) hostSlots.add(iso);
       }
     }
-    return { counts, total, hostSlots, hostName: poll.hostName };
+    return {
+      counts,
+      total,
+      hostSlots,
+      hostName: poll.hostName,
+      peopleBySlot: buildPeopleBySlot(respondents, viewerId),
+    };
   }, [respondents, viewerId, poll.hostName]);
 
   const isClosed = poll.status === "closed";
@@ -252,6 +261,7 @@ function PollContent({
         displayTimezone={displayTimezone}
         closed={isClosed}
         others={others}
+        isHost={isHost}
         onSaved={({ responseUrl }) => {
           if (responseUrl) setSavedResponseUrl(responseUrl);
           setJustSaved(true);
@@ -281,6 +291,8 @@ function PollContent({
             totalParticipants={overlap.totalParticipants}
             slotMinutes={poll.slotMinutes ?? 30}
             displayTimezone={displayTimezone}
+            peopleBySlot={peopleBySlot}
+            viewerId={viewerId}
           />
         </div>
       )}
