@@ -1,28 +1,18 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { HeroVideo } from "@/components/HeroVideo";
-import { SupportButton } from "@/components/SupportButton";
+import { SiteHeader } from "@/components/SiteHeader";
 import { HowItWorks } from "@/components/landing/HowItWorks";
+import { CompareTimeZones } from "@/components/landing/CompareTimeZones";
 import { BuiltForTeams } from "@/components/landing/BuiltForTeams";
 import { Faq } from "@/components/landing/Faq";
 import { SupportSection } from "@/components/landing/SupportSection";
-import { HourglassIcon, ArrowRightIcon, GlobeIcon } from "lucide-react";
+import { ArrowRightIcon, GlobeIcon } from "lucide-react";
 
 export default function LandingPage() {
   return (
     <div className="flex flex-1 flex-col">
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-2 font-heading font-semibold">
-          <HourglassIcon className="size-5" />
-          Hourglass
-        </div>
-        <div className="flex items-center gap-2">
-          <SupportButton />
-          <Button asChild size="sm">
-            <Link href="/create">Schedule Meeting</Link>
-          </Button>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="flex flex-1 flex-col">
         <section className="relative overflow-hidden border-b">
@@ -58,6 +48,12 @@ export default function LandingPage() {
                     <ArrowRightIcon className="size-4" />
                   </Link>
                 </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link href="/timezone-converter">
+                    <GlobeIcon className="size-4" />
+                    Time Zone Converter
+                  </Link>
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground">
                 No sign-up for you or your invitees · Free
@@ -73,6 +69,7 @@ export default function LandingPage() {
         </section>
 
         <HowItWorks />
+        <CompareTimeZones />
         <BuiltForTeams />
         <Faq />
         <SupportSection />

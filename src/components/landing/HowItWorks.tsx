@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   CalendarPlusIcon,
   LinkIcon,
   UsersRoundIcon,
   CheckCircle2Icon,
+  ArrowRightIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -46,7 +49,7 @@ export function HowItWorks() {
   return (
     <section className="mx-auto w-full max-w-5xl px-6 py-24">
       <div className="mb-12 flex flex-col gap-2 text-center">
-        <h2 className="text-3xl font-semibold tracking-tight">How it works</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">How Schedule Meeting Works</h2>
         <p className="text-muted-foreground">Four steps, no learning curve.</p>
       </div>
 
@@ -98,6 +101,15 @@ export function HowItWorks() {
           <h3 className="mt-5 font-heading text-xl font-semibold">{step.title}</h3>
           <p className="mt-2 max-w-md text-muted-foreground">{step.body}</p>
         </div>
+      </div>
+
+      <div className="mt-12 flex justify-center">
+        <Button asChild size="lg">
+          <Link href="/create">
+            Schedule Meeting
+            <ArrowRightIcon className="size-4" />
+          </Link>
+        </Button>
       </div>
     </section>
   );

@@ -16,6 +16,8 @@ interface SupportButtonProps {
   /** "blue" recolors the button while keeping its filled/outline style.
    * Used everywhere except the homepage, which keeps the neutral look. */
   tone?: "neutral" | "blue";
+  /** Drops " this project" on very narrow screens so a crowded header row fits. */
+  compactOnNarrow?: boolean;
 }
 
 // `!` (important) so the color wins over the variant's own bg/border/text
@@ -32,6 +34,7 @@ export function SupportButton({
   className,
   jump = false,
   tone = "neutral",
+  compactOnNarrow = false,
 }: SupportButtonProps) {
   const isOutline = variant === "outline" || variant === "ghost" || variant === "link";
   return (
@@ -45,9 +48,15 @@ export function SupportButton({
         className,
       )}
     >
-      <Link href={GUMROAD_URL} target="_blank" rel="noopener noreferrer">
+      <Link
+        href={GUMROAD_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Support this project"
+      >
         <HeartIcon className="size-4" />
-        Support this project
+        Support
+        <span className={cn(compactOnNarrow && "hidden min-[400px]:inline")}>this project</span>
       </Link>
     </Button>
   );
