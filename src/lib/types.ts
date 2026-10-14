@@ -22,7 +22,7 @@ export interface PublicPollResponse {
 export interface OverlapResponse {
   totalParticipants: number;
   hostParticipantId: string | null;
-  participants: { id: string; displayName: string; isHost: boolean }[];
+  participants: { id: string; displayName: string; isHost: boolean; timezone: string | null }[];
   slots: { startAt: string; count: number; participantIds: string[] }[];
 }
 

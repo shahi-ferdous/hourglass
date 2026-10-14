@@ -14,6 +14,7 @@ import { TimezoneSwitcher } from "@/components/TimezoneSwitcher";
 import { PollSettingsForm } from "./PollSettingsForm";
 import { RosterList } from "@/components/RosterList";
 import { ResponseEditor } from "@/components/ResponseEditor";
+import { MeetingSummaryCard } from "@/components/MeetingSummaryCard";
 import { DeletePollDialog } from "./DeletePollDialog";
 import { api, ApiClientError, getErrorMessage } from "@/lib/api-client";
 import { buildSlotGrid } from "@/lib/time/grid";
@@ -243,6 +244,13 @@ function ManageContent({
           />
         </div>
       </div>
+
+      <MeetingSummaryCard
+        poll={poll}
+        participants={participants}
+        displayTimezone={displayTimezone}
+        isHost
+      />
 
       <Card>
         <CardContent className="flex flex-col gap-2 pt-6 text-sm">

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { api, getErrorMessage } from "@/lib/api-client";
 import type { GridSlot } from "@/lib/time/grid";
+import { detectLocalTimezone } from "@/lib/time/timezones";
 
 interface ResponseEditorProps {
   pollId: string;
@@ -69,18 +70,22 @@ export function ResponseEditor({
     const name = draftName.trim();
     if (!name) return;
     setSaving(true);
+    // Recorded so the host can list everyone's local meeting time. The host's
+    // own zone is the poll's canonical `hostTimezone`, so it isn't overwritten.
+    const timezone = isHost ? undefined : detectLocalTimezone();
     try {
       if (participantId) {
         await api.patch(`/api/polls/${pollId}/participants/${participantId}`, {
           displayName: name,
           slots: [...draftSlots],
+          timezone,
         });
         toast.success("Your response has been updated");
         onSaved({});
       } else {
         const res = await api.post<{ participantId: string; responseUrl: string }>(
           `/api/polls/${pollId}/participants`,
-          { displayName: name, slots: [...draftSlots] },
+          { displayName: name, slots: [...draftSlots], timezone },
         );
         toast.success("Your response has been saved");
         onSaved({ responseUrl: res.responseUrl });

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { DateTime } from "luxon";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,13 +12,15 @@ import { ResponseEditor } from "@/components/ResponseEditor";
 import { BestTimesList } from "@/components/BestTimesList";
 import { RosterList, type RosterParticipant } from "@/components/RosterList";
 import { SupportButton } from "@/components/SupportButton";
+import { FinalTimeBanner, ClosedPollNotice } from "@/components/FinalTimeBanner";
+import { MeetingSummaryCard } from "@/components/MeetingSummaryCard";
 import { ManageAccessPrompt } from "@/components/ManageAccessPrompt";
 import { api, ApiClientError, getErrorMessage } from "@/lib/api-client";
 import { buildSlotGrid } from "@/lib/time/grid";
 import { buildPeopleBySlot } from "@/lib/slot-people";
 import { detectLocalTimezone } from "@/lib/time/timezones";
 import type { OverlapResponse, PublicPollResponse } from "@/lib/types";
-import { CalendarIcon, CopyIcon, LinkIcon, MapPinIcon, ShieldCheckIcon } from "lucide-react";
+import { CalendarIcon, CopyIcon, LinkIcon, MapPinIcon } from "lucide-react";
 
 type Stage =
   | { kind: "loading" }
@@ -230,19 +231,38 @@ function PollContent({
 
       <PollHeader poll={poll} displayTimezone={displayTimezone} />
 
-      {poll.finalStartAt && poll.finalEndAt && (
-        <FinalTimeBanner
-          startAt={poll.finalStartAt}
-          endAt={poll.finalEndAt}
+      {overlap ? (
+        <MeetingSummaryCard
+          poll={{
+            title: poll.title,
+            location: poll.location,
+            meetingUrl: poll.meetingUrl,
+            hostTimezone: poll.hostTimezone ?? "UTC",
+            status: poll.status ?? "active",
+            finalStartAt: poll.finalStartAt,
+            finalEndAt: poll.finalEndAt,
+          }}
+          participants={overlap.participants.map((p) => ({
+            displayName: p.displayName,
+            isHost: p.isHost,
+            timezone: p.timezone,
+          }))}
           displayTimezone={displayTimezone}
-          meetingUrl={poll.meetingUrl}
+          isHost={isHost}
         />
-      )}
-
-      {isClosed && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          This poll is closed. Responses can no longer be added or changed.
-        </div>
+      ) : (
+        // Until the roster loads, fall back to the plain banner.
+        <>
+          {poll.finalStartAt && poll.finalEndAt && (
+            <FinalTimeBanner
+              startAt={poll.finalStartAt}
+              endAt={poll.finalEndAt}
+              displayTimezone={displayTimezone}
+              meetingUrl={poll.meetingUrl}
+            />
+          )}
+          {isClosed && <ClosedPollNotice />}
+        </>
       )}
 
       <TimezoneSwitcher
@@ -355,37 +375,6 @@ function PollHeader({
       <p className="text-xs text-muted-foreground">
         Times below are shown in {displayTimezone.replace(/_/g, " ")}.
       </p>
-    </div>
-  );
-}
-
-function FinalTimeBanner({
-  startAt,
-  endAt,
-  displayTimezone,
-  meetingUrl,
-}: {
-  startAt: string;
-  endAt: string;
-  displayTimezone: string;
-  meetingUrl?: string | null;
-}) {
-  const start = DateTime.fromISO(startAt, { zone: "utc" }).setZone(displayTimezone);
-  const end = DateTime.fromISO(endAt, { zone: "utc" }).setZone(displayTimezone);
-  return (
-    <div className="flex flex-col gap-1 rounded-md border border-primary/30 bg-primary/5 px-4 py-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-primary">
-        <ShieldCheckIcon className="size-4" />
-        Meeting time selected
-      </div>
-      <p className="font-medium">
-        {start.toFormat("cccc, LLLL d")} · {start.toFormat("h:mm a")}–{end.toFormat("h:mm a")}
-      </p>
-      {meetingUrl && (
-        <a href={meetingUrl} target="_blank" rel="noopener noreferrer nofollow" className="w-fit text-sm underline underline-offset-2">
-          Join meeting
-        </a>
-      )}
     </div>
   );
 }

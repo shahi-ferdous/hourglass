@@ -23,6 +23,7 @@ export const GET = withErrorHandling(async (req: NextRequest, { params }: RouteP
         id: participants.id,
         displayName: participants.displayName,
         isHost: participants.isHost,
+        timezone: participants.timezone,
       })
       .from(participants)
       .where(eq(participants.pollId, pollId)),
@@ -33,7 +34,12 @@ export const GET = withErrorHandling(async (req: NextRequest, { params }: RouteP
   return NextResponse.json({
     totalParticipants: roster.length,
     hostParticipantId,
-    participants: roster,
+    // Time zones are only shared once a meeting time is selected — they feed
+    // the "meeting time in everyone's zone" card, and nothing else needs them.
+    participants: roster.map((p) => ({
+      ...p,
+      timezone: poll.finalStartAt ? p.timezone : null,
+    })),
     slots: overlap.map((s) => ({
       startAt: s.slotStartAt.toISOString(),
       count: s.count,

@@ -45,10 +45,14 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: Rout
 
   const body = updateParticipantSchema.parse(await req.json());
 
-  if (body.displayName !== undefined) {
+  if (body.displayName !== undefined || body.timezone !== undefined) {
     await db
       .update(participants)
-      .set({ displayName: body.displayName, updatedAt: new Date() })
+      .set({
+        ...(body.displayName !== undefined && { displayName: body.displayName }),
+        ...(body.timezone !== undefined && { timezone: body.timezone }),
+        updatedAt: new Date(),
+      })
       .where(eq(participants.id, participantId));
   }
   if (body.slots !== undefined) {

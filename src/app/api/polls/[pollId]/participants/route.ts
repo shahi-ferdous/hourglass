@@ -42,6 +42,7 @@ export const POST = withErrorHandling(async (req: NextRequest, { params }: Route
       pollId,
       isHost: false,
       displayName: body.displayName,
+      timezone: body.timezone ?? null,
       accessTokenHash: hashBearerToken(token),
     });
     await replaceParticipantSlots(
